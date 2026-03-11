@@ -6,16 +6,28 @@
 
 import { GameEngine, CLAW_STATE } from './core/GameEngine.js';
 import { StateManager } from './storage/StateManager.js';
-import { PackyClient } from './image/PackyClient.js';
+import { ImageClient } from './image/ImageClient.js';
 
 // 环境变量
-const PACKY_API_KEY = process.env.PACKY_API_KEY;
+const IMAGE_API_KEY = process.env.IMAGE_API_KEY;
+const IMAGE_API_BASE = process.env.IMAGE_API_BASE;
+const IMAGE_API_MODEL = process.env.IMAGE_API_MODEL;
 const DATA_PATH = process.env.TRAVELCLAW_DATA_PATH;
 
 class TravelClawSkill {
   constructor() {
     this.storage = new StateManager(DATA_PATH);
-    this.imageClient = PACKY_API_KEY ? new PackyClient(PACKY_API_KEY) : null;
+    
+    // 初始化图片客户端（支持多平台）
+    this.imageClient = null;
+    if (IMAGE_API_KEY) {
+      this.imageClient = new ImageClient({
+        apiKey: IMAGE_API_KEY,
+        baseUrl: IMAGE_API_BASE,
+        model: IMAGE_API_MODEL
+      });
+    }
+    
     this.engines = new Map(); // 用户游戏引擎缓存
   }
 
@@ -213,7 +225,7 @@ class TravelClawSkill {
   async generateSelfie(engine) {
     if (!this.imageClient) {
       return { 
-        text: '抱歉，生图功能需要配置 PACKY_API_KEY 才能使用 🦞' 
+        text: '抱歉，生图功能需要配置 IMAGE_API_KEY 才能使用 🦞\n支持: PackyAPI、Gemini、OpenAI、Stability AI 等' 
       };
     }
 

@@ -187,6 +187,16 @@ import { GeminiClient } from './image/GeminiClient.js';
 const client = new GeminiClient(apiKey);
 ```
 
+**构造函数：**
+
+```javascript
+const client = new ImageClient({
+  apiKey: 'your-api-key',
+  baseUrl: 'https://api.example.com',  // 可选
+  model: 'your-model-name'              // 可选
+});
+```
+
 #### generatePostcard()
 生成旅行明信片
 
@@ -199,6 +209,7 @@ const result = await client.generatePostcard(claw, locationId, activity);
 {
   imageData: string;  // base64
   mimeType: string;
+  url: string | null;
 }
 ```
 

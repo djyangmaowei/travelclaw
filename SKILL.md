@@ -34,14 +34,16 @@
 
 | 变量名 | 必需 | 说明 |
 |--------|------|------|
-| `PACKY_API_KEY` | 是 | PackyAPI 密钥，用于生成图片 |
+| `IMAGE_API_KEY` | 是 | 图像生成 API 密钥 |
+| `IMAGE_API_BASE` | 否 | 自定义 API 基础地址（如使用中转站） |
+| `IMAGE_API_MODEL` | 否 | 指定模型名称 |
 | `TRAVELCLAW_DATA_PATH` | 否 | 游戏数据存储路径，默认 `~/.openclaw/travelclaw/` |
 
 ## 依赖
 
 - Node.js >= 18
 - OpenClaw >= 1.0
-- PackyAPI 访问权限
+- 任意图像生成 API 访问权限（PackyAPI/Gemini/OpenAI/自定义）
 
 ## 资源文件
 

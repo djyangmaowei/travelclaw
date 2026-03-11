@@ -39,16 +39,22 @@ async function main() {
   }
 
   // 2. 询问 Gemini API Key
-  console.log('TravelClaw 需要 PackyAPI Key 来生成图片。');
-  console.log('获取地址: https://www.packyapi.com/\n');
-  console.log('模型: doubao-seedream-5.0-lite (豆包即梦)\n');
+  console.log('TravelClaw 需要图像生成 API Key。');
+  console.log('支持的提供商:');
+  console.log('  - PackyAPI: https://www.packyapi.com/ (豆包 Seedream)');
+  console.log('  - Gemini: https://aistudio.google.com/app/apikey');
+  console.log('  - OpenAI: https://platform.openai.com/api-keys');
+  console.log('  - 或其他任意 OpenAI 兼容接口\n');
   
-  const apiKey = await question('请输入你的 PackyAPI Key: ');
+  const apiKey = await question('请输入你的 API Key: ');
   
   if (!apiKey || apiKey.length < 10) {
     console.error('❌ 无效的 API Key');
     process.exit(1);
   }
+
+  const baseUrl = await question('请输入 API 基础地址 (可选，直接回车跳过): ');
+  const model = await question('请输入模型名称 (可选，直接回车跳过): ');
 
   // 3. 安装 Skill
   const skillsDir = join(OPENCLAW_DIR, 'skills', SKILL_NAME);
@@ -103,12 +109,22 @@ async function main() {
     config.skills.entries = {};
   }
 
-  config.skills.entries[SKILL_NAME] = {
+  const skillConfig = {
     enabled: true,
     env: {
-      PACKY_API_KEY: apiKey
+      IMAGE_API_KEY: apiKey
     }
   };
+  
+  if (baseUrl && baseUrl.trim()) {
+    skillConfig.env.IMAGE_API_BASE = baseUrl.trim();
+  }
+  
+  if (model && model.trim()) {
+    skillConfig.env.IMAGE_API_MODEL = model.trim();
+  }
+  
+  config.skills.entries[SKILL_NAME] = skillConfig;
 
   await writeFile(configPath, JSON.stringify(config, null, 2));
 
