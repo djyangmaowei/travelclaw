@@ -1,0 +1,46 @@
+{
+  "name": "travelclaw",
+  "version": "1.0.0",
+  "description": "🦞 一只爱旅行的龙虾伙伴 —— OpenClaw 放置养成 Skill",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "build": "echo 'No build step required'",
+    "test": "node --test src/**/*.test.js",
+    "setup": "node scripts/setup.js",
+    "install:skill": "node scripts/install.js"
+  },
+  "keywords": [
+    "openclaw",
+    "skill",
+    "game",
+    "lobster",
+    "travel",
+    "tamagotchi",
+    "idle-game"
+  ],
+  "author": "TravelClaw Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/djyangmaowei/travelclaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/djyangmaowei/travelclaw/issues"
+  },
+  "homepage": "https://github.com/djyangmaowei/travelclaw#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+  },
+  "openclaw": {
+    "skill": true,
+    "capabilities": [
+      "image-generation",
+      "state-management",
+      "cron-jobs"
+    ]
+  }
+}
