@@ -29,6 +29,8 @@ class TravelClawSkill {
     }
     
     this.engines = new Map(); // 用户游戏引擎缓存
+    this.reminderTimers = new Map(); // 用户提醒定时器
+    this.isTestMode = process.env.TRAVELCLAW_TEST_MODE === 'true'; // 测试模式（缩短间隔）
   }
 
   /**
@@ -46,8 +48,13 @@ class TravelClawSkill {
   /**
    * 主处理函数 - 处理用户消息
    */
-  async handleMessage(userId, message) {
+  async handleMessage(userId, message, context = {}) {
     const engine = await this.getEngine(userId);
+    
+    // 检查是否是健康提醒触发的消息
+    if (context.isHealthReminder) {
+      return this.formatHealthReminder(engine.getHealthReminder(context.isFirstReminder));
+    }
     
     // 学习玩家偏好
     await engine.handleMessage(message);
@@ -56,11 +63,68 @@ class TravelClawSkill {
     const command = this.parseCommand(message);
     
     if (command) {
-      return await this.executeCommand(engine, command);
+      return await this.executeCommand(engine, command, userId);
     }
 
     // 自然语言交互
     return await this.handleNaturalLanguage(engine, message);
+  }
+  
+  /**
+   * ⏰ 启动健康提醒定时器
+   */
+  startHealthReminder(userId) {
+    // 如果已有定时器，先清除
+    this.stopHealthReminder(userId);
+    
+    const interval = this.isTestMode ? 2 * 60 * 1000 : 45 * 60 * 1000; // 测试模式2分钟，正常45分钟
+    
+    const timer = setInterval(async () => {
+      try {
+        const engine = await this.getEngine(userId);
+        const settings = engine.getHealthSettings();
+        
+        // 检查是否应该提醒
+        if (!settings.disabled) {
+          const reminder = engine.getHealthReminder();
+          if (reminder && this.onHealthReminder) {
+            this.onHealthReminder(userId, this.formatHealthReminder(reminder));
+          }
+        }
+      } catch (error) {
+        console.error('Health reminder error:', error);
+      }
+    }, interval);
+    
+    this.reminderTimers.set(userId, timer);
+    
+    // 返回首次提醒
+    return this.getEngine(userId).then(engine => {
+      const settings = engine.getHealthSettings();
+      if (!settings.disabled && settings.stats.reminders === 0) {
+        const reminder = engine.getHealthReminder(true);
+        if (reminder) return this.formatHealthReminder(reminder);
+      }
+      return null;
+    });
+  }
+  
+  /**
+   * ⏰ 停止健康提醒定时器
+   */
+  stopHealthReminder(userId) {
+    const timer = this.reminderTimers.get(userId);
+    if (timer) {
+      clearInterval(timer);
+      this.reminderTimers.delete(userId);
+    }
+  }
+  
+  /**
+   * 设置健康提醒回调
+   */
+  setHealthReminderCallback(callback) {
+    this.onHealthReminder = callback;
   }
 
   /**
@@ -169,6 +233,28 @@ class TravelClawSkill {
     if (/^(亲密度|bond|好感|关系)/.test(lowerMsg)) {
       return { type: 'bond' };
     }
+    
+    // ⏰ 健康提醒
+    if (/^(健康|提醒|健康提醒|微习惯|身体燃料)/.test(lowerMsg)) {
+      if (/开启|打开|启用|开始/.test(message)) {
+        return { type: 'health_enable' };
+      }
+      if (/关闭|关掉|停止|禁用/.test(message)) {
+        return { type: 'health_disable' };
+      }
+      if (/静默|静音|专注|会议/.test(message)) {
+        const minutesMatch = message.match(/(\d+)\s*分钟/);
+        const minutes = minutesMatch ? parseInt(minutesMatch[1]) : 60;
+        return { type: 'health_silent', minutes };
+      }
+      if (/恢复|取消静默/.test(message)) {
+        return { type: 'health_unsilent' };
+      }
+      if (/报告|统计|数据/.test(message)) {
+        return { type: 'health_report' };
+      }
+      return { type: 'health_status' };
+    }
 
     // 帮助
     if (/^(帮助|help|指令|怎么用|指南)/.test(lowerMsg)) {
@@ -235,6 +321,34 @@ class TravelClawSkill {
         
       case 'bond':
         return this.formatBond(engine.claw);
+        
+      case 'health_status':
+        return this.formatHealthStatus(engine);
+      
+      case 'health_enable':
+        this.startHealthReminder(userId);
+        await engine.toggleHealthReminder(true);
+        return { 
+          text: '✅ 健康提醒已开启！\n\n🦞 每 45 分钟会温柔提醒你：\n  💧 喝水（150-200ml）\n  🦵 站立活动（1分钟）\n  🍑 提肛锻炼（隐形健身）\n\n发送"健康 静默 60分钟"可进入专注模式。' 
+        };
+      
+      case 'health_disable':
+        this.stopHealthReminder(userId);
+        await engine.toggleHealthReminder(false);
+        return { text: '❌ 健康提醒已关闭。\n\n发送"健康 开启"随时重新启用。' };
+      
+      case 'health_silent':
+        await engine.enableSilentMode(command.minutes);
+        return { 
+          text: `🔕 已进入静默模式 ${command.minutes} 分钟。\n\n🦞 会安静陪伴，不打扰你专注。\n时间到了自动恢复提醒。` 
+        };
+      
+      case 'health_unsilent':
+        await engine.disableSilentMode();
+        return { text: '🔔 已恢复健康提醒！\n\n🦞 回来了，继续陪你保持健康～' };
+      
+      case 'health_report':
+        return this.formatHealthReport(engine);
 
       case 'help':
         return this.formatHelp();
@@ -479,10 +593,18 @@ class TravelClawSkill {
   出发 - 让 🦞 开始旅行
 
 🎁 新增功能:
-  任务 - 查看今日任务
+  任务 - 查看每日任务
   背包 - 查看特殊道具
   开箱 - 开启宝箱（获得后）
   亲密度 - 查看羁绊关系
+
+⏰ 健康提醒:
+  健康 - 查看健康提醒状态
+  健康 开启 - 启动微习惯闹钟
+  健康 关闭 - 停止健康提醒
+  健康 静默 60分钟 - 进入专注模式
+  健康 恢复 - 取消静默模式
+  健康 报告 - 查看今日健康数据
 
 📸 其他功能:
   图鉴 - 查看收集成就
@@ -495,6 +617,7 @@ class TravelClawSkill {
   • 多和 🦞 互动增加亲密度，亲密度越高幸运值越高
   • 完成每日任务获得额外奖励
   • 收割贝壳和旅行都有概率获得稀有道具
+  • 开启"健康提醒"，让 🦞 成为你的微习惯闹钟
   • 🦞 会根据自己的想法旅行，耐心等待明信片
 
 愿你的 🦞 旅途愉快！`
@@ -608,6 +731,79 @@ class TravelClawSkill {
     lines.push('  • 送 🦞 去旅行 (+3)');
     lines.push('  • 完成每日任务 (+5)');
     lines.push('  • 触发随机事件 (+3~8)');
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // ⏰ 格式化健康提醒
+  formatHealthReminder(reminder) {
+    if (!reminder) return null;
+    
+    const lines = [
+      `⏰ 微习惯闹钟`,
+      '',
+      reminder.message,
+      '',
+      `💡 ${reminder.tip}`
+    ];
+    
+    if (reminder.intervalMsg) {
+      lines.push('', reminder.intervalMsg);
+    }
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // ⏰ 格式化健康状态
+  formatHealthStatus(engine) {
+    const settings = engine.getHealthSettings();
+    const { stats } = settings;
+    
+    const lines = [
+      `⏰ 微习惯闹钟设置`,
+      '',
+      `状态: ${settings.disabled ? '❌ 已关闭' : '✅ 运行中'}`,
+    ];
+    
+    if (settings.silentMode) {
+      const until = new Date(settings.silentUntil);
+      const minutesLeft = Math.ceil((until - Date.now()) / 60000);
+      lines.push(`模式: 🔕 静默（还剩 ${minutesLeft} 分钟）`);
+    }
+    
+    lines.push('', '📊 今日统计:');
+    lines.push(`  提醒次数: ${stats.reminders}`);
+    lines.push(`  预估饮水: ${stats.water}ml`);
+    lines.push('', '⏱️ 提醒频率: 每 45 分钟');
+    lines.push('🕐 提醒时段: 09:00 - 22:00');
+    
+    lines.push('', '💡 可用指令:');
+    lines.push('  健康 开启 / 关闭');
+    lines.push('  健康 静默 60分钟');
+    lines.push('  健康 恢复');
+    lines.push('  健康 报告');
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // ⏰ 格式化健康报告
+  formatHealthReport(engine) {
+    const report = engine.generateDailyReport();
+    const settings = engine.getHealthSettings();
+    const { stats } = settings;
+    
+    const lines = [
+      `📊 今日健康报告`,
+      '',
+      report,
+      '',
+      '📈 详细数据:',
+      `  完成提醒: ${stats.reminders} 次`,
+      `  预估饮水: ${stats.water}ml`,
+      `  目标达成: ${Math.min(100, Math.floor(stats.reminders / 17 * 100))}%`,
+      '',
+      '🦞 "继续保持，你是最棒的！"'
+    ];
     
     return { text: lines.join('\n') };
   }

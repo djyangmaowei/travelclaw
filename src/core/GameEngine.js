@@ -29,6 +29,14 @@ import {
   calculateLuckModifier,
   SPECIAL_DROPS 
 } from './Rewards.js';
+import {
+  generateReminder,
+  generateDailyReport,
+  shouldRemind,
+  getCurrentTimeSlot,
+  getNextReminderTime,
+  getIntervalMessage
+} from './HealthReminder.js';
 
 // 🦞 状态枚举
 export const CLAW_STATE = {
@@ -62,6 +70,8 @@ export class GameEngine {
       this.dailyTask = data.dailyTask || null;
       this.taskProgress = data.taskProgress || {};
       this.specialItems = data.specialItems || {}; // 特殊道具存储
+      this.healthStats = data.healthStats || { reminders: 0, water: 0, lastDate: null };
+      this.healthSettings = data.healthSettings || { disabled: false, silentMode: false, silentUntil: null };
     } else {
       // 新游戏
       this.claw = new Claw(this.userId);
@@ -77,11 +87,16 @@ export class GameEngine {
       this.dailyTask = null;
       this.taskProgress = {};
       this.specialItems = {};
+      this.healthStats = { reminders: 0, water: 0, lastDate: null };
+      this.healthSettings = { disabled: false, silentMode: false, silentUntil: null };
       await this.saveGame();
     }
     
     // 检查并生成每日任务
     this.checkDailyTask();
+    
+    // 检查健康提醒日期，跨天重置统计
+    this.checkHealthStatsDate();
   }
 
   // 保存游戏数据
@@ -92,8 +107,94 @@ export class GameEngine {
       gameState: this.gameState,
       dailyTask: this.dailyTask,
       taskProgress: this.taskProgress,
-      specialItems: this.specialItems
+      specialItems: this.specialItems,
+      healthStats: this.healthStats,
+      healthSettings: this.healthSettings
     });
+  }
+  
+  // ========== ⏰ 健康提醒系统 ==========
+  
+  // 检查健康统计日期，跨天重置
+  checkHealthStatsDate() {
+    const today = new Date().toDateString();
+    if (this.healthStats.lastDate !== today) {
+      // 跨天了，检查是否需要发送昨日报告
+      const shouldSendReport = this.healthStats.lastDate && this.healthStats.reminders > 0;
+      
+      // 重置统计
+      this.healthStats = { reminders: 0, water: 0, lastDate: today };
+      this.saveGame();
+      
+      return shouldSendReport ? this.generateDailyReport() : null;
+    }
+    return null;
+  }
+  
+  // 获取健康提醒
+  getHealthReminder(isFirst = false) {
+    // 检查是否应该提醒
+    if (!shouldRemind(this.healthSettings)) {
+      return null;
+    }
+    
+    const reminder = generateReminder(null, isFirst);
+    if (reminder) {
+      // 更新统计
+      this.healthStats.reminders++;
+      if (reminder.type === 'hydrate') {
+        this.healthStats.water += 175; // 平均 150-200ml
+      }
+      this.saveGame();
+      
+      return {
+        ...reminder,
+        intervalMsg: getIntervalMessage()
+      };
+    }
+    return null;
+  }
+  
+  // 生成每日健康报告
+  generateDailyReport() {
+    return generateDailyReport(this.healthStats);
+  }
+  
+  // 获取健康设置
+  getHealthSettings() {
+    return {
+      ...this.healthSettings,
+      stats: this.healthStats
+    };
+  }
+  
+  // 更新健康设置
+  async updateHealthSettings(settings) {
+    this.healthSettings = { ...this.healthSettings, ...settings };
+    await this.saveGame();
+    return this.healthSettings;
+  }
+  
+  // 开启静默模式
+  async enableSilentMode(minutes = 60) {
+    const silentUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    return await this.updateHealthSettings({
+      silentMode: true,
+      silentUntil
+    });
+  }
+  
+  // 关闭静默模式
+  async disableSilentMode() {
+    return await this.updateHealthSettings({
+      silentMode: false,
+      silentUntil: null
+    });
+  }
+  
+  // 切换提醒开关
+  async toggleHealthReminder(enabled) {
+    return await this.updateHealthSettings({ disabled: !enabled });
   }
   
   // ========== 🎁 掉落与奖励系统 ==========
