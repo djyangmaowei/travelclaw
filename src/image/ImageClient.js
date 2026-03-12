@@ -10,12 +10,12 @@
  */
 
 import { PackyClient } from './PackyClient.js';
-import { GeminiClient } from './GeminiClient.js';
 
 export class ImageClient {
   constructor(config = {}) {
+    this.config = config;
     this.provider = config.provider || this.detectProvider(config);
-    this.client = this.createClient(config);
+    this.client = null; // 延迟初始化
   }
 
   /**
@@ -36,28 +36,37 @@ export class ImageClient {
   }
 
   /**
-   * 创建对应客户端
+   * 异步初始化客户端
    */
-  createClient(config) {
+  async initClient() {
+    if (this.client) return this.client;
+    
     switch (this.provider) {
       case 'packy':
-        return new PackyClient(config.apiKey, config.baseUrl);
+        this.client = new PackyClient(this.config.apiKey, this.config.baseUrl);
+        break;
       
-      case 'gemini':
-        return new GeminiClient(config.apiKey);
+      case 'gemini': {
+        const { GeminiClient } = await import('./GeminiClient.js');
+        this.client = new GeminiClient(this.config.apiKey);
+        break;
+      }
       
       case 'openai':
       case 'openai-compatible':
       default:
-        return new OpenAICompatibleClient(config);
+        this.client = new OpenAICompatibleClient(this.config);
     }
+    
+    return this.client;
   }
 
   /**
    * 生成图片
    */
   async generateImage(prompt, options = {}) {
-    return this.client.generateImage(prompt, options);
+    const client = await this.initClient();
+    return client.generateImage(prompt, options);
   }
 
   /**

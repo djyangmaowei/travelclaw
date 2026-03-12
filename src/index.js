@@ -267,7 +267,7 @@ class TravelClawSkill {
   /**
    * 执行指令
    */
-  async executeCommand(engine, command) {
+  async executeCommand(engine, command, userId) {
     switch (command.type) {
       case 'status':
         return this.formatStatus(await engine.getStatus());
