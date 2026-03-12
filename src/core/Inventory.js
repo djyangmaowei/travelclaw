@@ -252,6 +252,23 @@ export class Inventory {
     return this.unlocked_locations;
   }
 
+  // ========== 特殊道具管理 ==========
+  
+  // 添加特殊道具（由 GameEngine 调用）
+  addSpecialItem(itemId, count = 1) {
+    // 特殊道具存储在 GameEngine 的 specialItems 中
+    // 这里只是一个接口占位
+    return { success: true };
+  }
+  
+  // 获取特殊道具列表
+  getSpecialItems(specialItemsData) {
+    return Object.entries(specialItemsData || {}).map(([id, count]) => {
+      const item = getItem(id);
+      return item ? { ...item, count } : null;
+    }).filter(Boolean);
+  }
+
   // ========== 序列化 ==========
   
   toJSON() {

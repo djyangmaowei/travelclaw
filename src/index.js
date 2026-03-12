@@ -80,12 +80,15 @@ class TravelClawSkill {
     }
 
     // 商店
-    if (/^(商店|shop|商店|购买|买东西)/.test(lowerMsg)) {
-      if (/购买/.test(message)) {
-        const itemMatch = message.match(/购买\s*(.+)/);
-        if (itemMatch) {
-          return { type: 'buy', itemName: itemMatch[1].trim() };
-        }
+    if (/^(商店|shop|商店)/.test(lowerMsg)) {
+      return { type: 'shop' };
+    }
+    
+    // 购买
+    if (/^(购买|buy)/.test(lowerMsg) || /购买\s*.+/.test(message)) {
+      const itemMatch = message.match(/购买\s*(.+)/);
+      if (itemMatch) {
+        return { type: 'buy', itemName: itemMatch[1].trim() };
       }
       return { type: 'shop' };
     }
@@ -131,6 +134,40 @@ class TravelClawSkill {
     // 拍照/自拍
     if (/^(拍照|pic|自拍|照片|picture)/.test(lowerMsg)) {
       return { type: 'selfie' };
+    }
+    
+    // 📋 任务指令
+    if (/^(任务|task|每日任务|日常)/.test(lowerMsg)) {
+      return { type: 'task' };
+    }
+    
+    // 🎁 特殊物品/背包
+    if (/^(背包|物品|inventory|道具)/.test(lowerMsg)) {
+      return { type: 'inventory' };
+    }
+    
+    // 📦 开启宝箱
+    if (/^(开启|打开|开)\s*(宝箱|箱子)/.test(lowerMsg) || /^(开宝箱|开箱)/.test(lowerMsg)) {
+      const boxMatch = message.match(/(开启|打开|开)\s*(小宝箱|中宝箱|大宝箱|传说宝箱|宝箱)/);
+      const boxType = boxMatch ? 
+        (boxMatch[2] === '小宝箱' ? 'small' : 
+         boxMatch[2] === '中宝箱' ? 'medium' : 
+         boxMatch[2] === '大宝箱' ? 'large' : 
+         boxMatch[2] === '传说宝箱' ? 'legendary' : 'small') : 'small';
+      return { type: 'open_box', boxType };
+    }
+    
+    // 💎 使用物品
+    if (/^(使用|use)\s*(.+)/.test(lowerMsg)) {
+      const useMatch = message.match(/使用\s*(.+)/);
+      if (useMatch) {
+        return { type: 'use_item', itemName: useMatch[1].trim() };
+      }
+    }
+    
+    // 💕 亲密度
+    if (/^(亲密度|bond|好感|关系)/.test(lowerMsg)) {
+      return { type: 'bond' };
     }
 
     // 帮助
@@ -182,6 +219,22 @@ class TravelClawSkill {
 
       case 'selfie':
         return await this.generateSelfie(engine);
+        
+      case 'task':
+        return this.formatTask(engine.getDailyTask());
+        
+      case 'inventory':
+        return this.formatInventory(engine);
+        
+      case 'open_box':
+        return this.formatOpenBox(await engine.openBox(command.boxType));
+        
+      case 'use_item':
+        // TODO: 实现物品名称到ID的映射
+        return { text: '使用物品功能开发中...发送"背包"查看物品ID' };
+        
+      case 'bond':
+        return this.formatBond(engine.claw);
 
       case 'help':
         return this.formatHelp();
@@ -264,11 +317,31 @@ class TravelClawSkill {
       `🏠 状态: ${this.getStateText(status.state)}`,
       `🐚 贝壳: ${status.shells}`,
       `📊 天数: ${status.claw.age_days} 天`,
-      `✨ 性格: ${status.claw.personality}`
+      `✨ 性格: ${status.claw.personality}`,
+      `💕 亲密度: ${status.bond.title.emoji} ${status.bond.title.name} (${status.bond.level})`
     ];
 
     if (status.state === CLAW_STATE.TRAVELING && status.progress !== null) {
       lines.push(`🗺️ 旅行进度: ${status.progress}%`);
+    }
+    
+    // 显示连续登录
+    if (status.bond.consecutive > 1) {
+      lines.push(`🔥 连续登录: ${status.bond.consecutive} 天`);
+    }
+    
+    // 显示今日任务
+    if (status.dailyTask) {
+      const taskStatus = status.dailyTask.completed ? '✅' : '📋';
+      lines.push(`${taskStatus} 今日任务: ${status.dailyTask.name} (${status.dailyTask.progress}/${status.dailyTask.target})`);
+    }
+    
+    // 显示里程碑奖励
+    if (status.newMilestones && status.newMilestones.length > 0) {
+      lines.push('', '🏆 里程碑达成！');
+      for (const m of status.newMilestones) {
+        lines.push(`   ${m}% 阶段进度奖励已发放！`);
+      }
     }
 
     return { text: lines.join('\n') };
@@ -279,9 +352,14 @@ class TravelClawSkill {
       return { text: result.message };
     }
 
-    return {
-      text: `${result.message}\n\n💰 当前共有 ${result.total_shells} 个贝壳`
-    };
+    let text = `${result.message}\n\n💰 当前共有 ${result.total_shells} 个贝壳`;
+    
+    // 显示掉落
+    if (result.drop) {
+      text += `\n\n🎁 ${result.drop.message}`;
+    }
+
+    return { text };
   }
 
   formatShop(shop) {
@@ -400,6 +478,12 @@ class TravelClawSkill {
   行囊 - 查看/管理行囊
   出发 - 让 🦞 开始旅行
 
+🎁 新增功能:
+  任务 - 查看今日任务
+  背包 - 查看特殊道具
+  开箱 - 开启宝箱（获得后）
+  亲密度 - 查看羁绊关系
+
 📸 其他功能:
   图鉴 - 查看收集成就
   家园 - 查看/装饰小窝
@@ -408,11 +492,124 @@ class TravelClawSkill {
 
 💡 小贴士:
   • 给 🦞 准备好食物和装备再出发
+  • 多和 🦞 互动增加亲密度，亲密度越高幸运值越高
+  • 完成每日任务获得额外奖励
+  • 收割贝壳和旅行都有概率获得稀有道具
   • 🦞 会根据自己的想法旅行，耐心等待明信片
-  • 多和 🦞 互动，它会学习你的偏好！
 
 愿你的 🦞 旅途愉快！`
     };
+  }
+  
+  // 📋 格式化任务
+  formatTask(task) {
+    const lines = [
+      '📋 今日任务',
+      '',
+      `任务: ${task.name}`,
+      `进度: ${task.progress}/${task.target}`,
+    ];
+    
+    if (task.completed) {
+      lines.push('状态: ✅ 已完成');
+      lines.push('', '🎁 奖励已领取！');
+    } else {
+      lines.push(`状态: 进行中（还差 ${task.target - task.progress} 次）`);
+      lines.push('', '💡 奖励:');
+      if (task.reward.shells) {
+        lines.push(`  ${task.reward.shells} 个贝壳`);
+      }
+      if (task.reward.item) {
+        lines.push('  神秘道具');
+      }
+    }
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // 🎒 格式化背包
+  formatInventory(engine) {
+    const specialItems = engine.getSpecialItems();
+    
+    const lines = [
+      '🎒 特殊道具背包',
+      ''
+    ];
+    
+    if (specialItems.length === 0) {
+      lines.push('背包是空的...');
+      lines.push('');
+      lines.push('💡 通过以下方式获得道具:');
+      lines.push('  • 收割贝壳时有概率掉落');
+      lines.push('  • 🦞 旅行归来时可能带回');
+      lines.push('  • 完成每日任务');
+      lines.push('  • 达到成长里程碑');
+    } else {
+      specialItems.forEach(item => {
+        const rarityEmoji = { common: '⚪', uncommon: '🟢', rare: '🔵', epic: '🟣', legendary: '🟠', mythic: '🔴' }[item.rarity];
+        lines.push(`${rarityEmoji} ${item.emoji} ${item.name} x${item.count}`);
+        lines.push(`   ${item.description}`);
+        lines.push('');
+      });
+    }
+    
+    lines.push(`\n💕 当前亲密度: ${engine.claw.bond_level}`);
+    lines.push(`🍀 幸运加成: ${(engine.getLuckModifier() * 100).toFixed(1)}%`);
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // 📦 格式化开箱结果
+  formatOpenBox(result) {
+    if (!result.success) {
+      return { text: result.message };
+    }
+    
+    const lines = [
+      `🎉 开启了 ${result.box_name}！`,
+      '',
+      `💰 获得 ${result.shells} 个贝壳！`
+    ];
+    
+    if (result.items.length > 0) {
+      lines.push('', '🎁 获得物品:');
+      result.items.forEach(item => {
+        lines.push(`  ${item.emoji} ${item.name}`);
+      });
+    }
+    
+    return { text: lines.join('\n') };
+  }
+  
+  // 💕 格式化亲密度
+  formatBond(claw) {
+    const title = claw.getBondTitle();
+    const progress = claw.bond_level % 100;
+    const nextLevel = Math.floor(claw.bond_level / 100) * 100 + 100;
+    
+    const lines = [
+      `💕 与 🦞 的羁绊`,
+      '',
+      `${title.emoji} ${title.name}`,
+      `亲密度: ${claw.bond_level} / 1000`,
+    ];
+    
+    if (claw.bond_level < 1000) {
+      lines.push(`升级进度: ${progress}% (${claw.bond_level}/${nextLevel})`);
+    } else {
+      lines.push('✨ 已达到最高等级！');
+    }
+    
+    lines.push('', `🔥 连续登录: ${claw.consecutive_days} 天`);
+    lines.push(`💬 今日已互动: ${claw.bond_today} 点亲密度`);
+    
+    lines.push('', '💡 提升亲密度的方法:');
+    lines.push('  • 和 🦞 聊天 (+1)');
+    lines.push('  • 送 🦞 去旅行 (+3)');
+    lines.push('  • 完成每日任务 (+5)');
+    lines.push('  • 触发随机事件 (+3~8)');
+    
+    return { text: lines.join('\n') };
   }
 
   // ========== 辅助方法 ==========

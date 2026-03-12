@@ -253,6 +253,9 @@ export const SOUVENIRS = {
   }
 };
 
+// 🎁 特殊掉落物品（从 Rewards.js 导入时会合并）
+export const SPECIAL_ITEMS = {};
+
 // 获取所有可购买的物品
 export function getShopItems() {
   return {
@@ -268,7 +271,13 @@ export function getItem(id) {
     ...FOODS,
     ...GEAR,
     ...DECORATIONS,
-    ...SOUVENIRS
+    ...SOUVENIRS,
+    ...SPECIAL_ITEMS
   };
   return allItems[id] || null;
+}
+
+// 注册特殊物品（由 Rewards.js 调用）
+export function registerSpecialItems(items) {
+  Object.assign(SPECIAL_ITEMS, items);
 }

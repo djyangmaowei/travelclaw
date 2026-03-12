@@ -13,9 +13,22 @@ import {
   DEPARTURE_MESSAGES,
   POSTCARD_MESSAGES,
   SOUVENIR_MESSAGES,
-  COLLECT_MESSAGES
+  COLLECT_MESSAGES,
+  DROP_MESSAGES,
+  TASK_MESSAGES,
+  EVENT_MESSAGES,
+  MILESTONE_MESSAGES
 } from '../content/dialogues.js';
-import { getItem } from '../content/items.js';
+import { getItem, getShopItems } from '../content/items.js';
+import { 
+  rollDrop, 
+  openBox, 
+  getMilestoneReward, 
+  generateDailyTask, 
+  triggerRandomEvent,
+  calculateLuckModifier,
+  SPECIAL_DROPS 
+} from './Rewards.js';
 
 // 🦞 状态枚举
 export const CLAW_STATE = {
@@ -46,6 +59,9 @@ export class GameEngine {
       this.claw = Claw.fromJSON(data.claw);
       this.inventory = Inventory.fromJSON(data.inventory);
       this.gameState = data.gameState;
+      this.dailyTask = data.dailyTask || null;
+      this.taskProgress = data.taskProgress || {};
+      this.specialItems = data.specialItems || {}; // 特殊道具存储
     } else {
       // 新游戏
       this.claw = new Claw(this.userId);
@@ -58,8 +74,14 @@ export class GameEngine {
         last_shell_collection: new Date().toISOString(),
         pending_shells: 0
       };
+      this.dailyTask = null;
+      this.taskProgress = {};
+      this.specialItems = {};
       await this.saveGame();
     }
+    
+    // 检查并生成每日任务
+    this.checkDailyTask();
   }
 
   // 保存游戏数据
@@ -67,8 +89,261 @@ export class GameEngine {
     await this.storage.save(this.userId, {
       claw: this.claw.toJSON(),
       inventory: this.inventory.toJSON(),
-      gameState: this.gameState
+      gameState: this.gameState,
+      dailyTask: this.dailyTask,
+      taskProgress: this.taskProgress,
+      specialItems: this.specialItems
     });
+  }
+  
+  // ========== 🎁 掉落与奖励系统 ==========
+  
+  // 获取当前幸运加成
+  getLuckModifier() {
+    return calculateLuckModifier(0, this.claw.bond_level);
+  }
+  
+  // 💝 处理掉落
+  async processDrop(activity, context = {}) {
+    const luckModifier = this.getLuckModifier();
+    const drop = rollDrop(activity, luckModifier);
+    
+    if (drop) {
+      // 添加到特殊物品库存
+      this.specialItems[drop.id] = (this.specialItems[drop.id] || 0) + 1;
+      await this.saveGame();
+      
+      return {
+        dropped: true,
+        item: drop,
+        message: randomMessage(DROP_MESSAGES[drop.rarity] || DROP_MESSAGES.common, {
+          item: `${drop.emoji} ${drop.name}`
+        })
+      };
+    }
+    
+    return { dropped: false };
+  }
+  
+  // 📦 开启宝箱
+  async openBox(boxType) {
+    const boxItemId = boxType === 'small' ? 'mystery_box' : 
+                      boxType === 'golden' ? 'golden_shell' : 'mystery_box';
+    
+    if (!this.specialItems[boxItemId] || this.specialItems[boxItemId] <= 0) {
+      return { success: false, message: '你没有这个宝箱 📦' };
+    }
+    
+    // 消耗宝箱
+    this.specialItems[boxItemId]--;
+    if (this.specialItems[boxItemId] === 0) {
+      delete this.specialItems[boxItemId];
+    }
+    
+    // 开箱
+    const luckModifier = this.getLuckModifier();
+    const result = openBox(boxType, luckModifier);
+    
+    // 发放奖励
+    this.inventory.addShells(result.shells);
+    
+    for (const item of result.items) {
+      if (item.type === 'special') {
+        this.specialItems[item.id] = (this.specialItems[item.id] || 0) + 1;
+      } else {
+        this.inventory.items[item.id] = (this.inventory.items[item.id] || 0) + 1;
+      }
+    }
+    
+    await this.saveGame();
+    
+    return {
+      success: true,
+      box_name: result.box_name,
+      shells: result.shells,
+      items: result.items
+    };
+  }
+  
+  // 🏆 检查里程碑奖励
+  checkMilestones() {
+    const newMilestones = this.claw.checkMilestones();
+    const rewards = [];
+    
+    for (const milestone of newMilestones) {
+      const reward = getMilestoneReward(milestone, this.claw.getCurrentStage().id);
+      this.inventory.addShells(reward.shells);
+      
+      if (reward.item) {
+        this.specialItems[reward.item.id] = (this.specialItems[reward.item.id] || 0) + 1;
+      }
+      
+      rewards.push({
+        milestone,
+        shells: reward.shells,
+        item: reward.item
+      });
+    }
+    
+    if (rewards.length > 0) {
+      this.saveGame();
+    }
+    
+    return rewards;
+  }
+  
+  // 📋 每日任务系统
+  checkDailyTask() {
+    const today = new Date().toDateString();
+    
+    // 如果没有任务或不是今天的任务，生成新任务
+    if (!this.dailyTask || this.dailyTask.date !== today) {
+      this.dailyTask = {
+        ...generateDailyTask(),
+        date: today,
+        completed: false,
+        progress: 0
+      };
+      this.taskProgress = {};
+    }
+  }
+  
+  getDailyTask() {
+    this.checkDailyTask();
+    return {
+      ...this.dailyTask,
+      remaining: Math.max(0, this.dailyTask.target - this.dailyTask.progress)
+    };
+  }
+  
+  // 更新任务进度
+  async updateTaskProgress(taskId, amount = 1) {
+    if (!this.dailyTask || this.dailyTask.completed || this.dailyTask.id !== taskId) {
+      return null;
+    }
+    
+    this.dailyTask.progress += amount;
+    
+    // 检查是否完成
+    if (this.dailyTask.progress >= this.dailyTask.target && !this.dailyTask.completed) {
+      this.dailyTask.completed = true;
+      
+      // 发放奖励
+      if (this.dailyTask.reward.shells) {
+        this.inventory.addShells(this.dailyTask.reward.shells);
+      }
+      
+      if (this.dailyTask.reward.item) {
+        const item = SPECIAL_DROPS[this.dailyTask.reward.item];
+        if (item) {
+          this.specialItems[item.id] = (this.specialItems[item.id] || 0) + 1;
+        }
+      }
+      
+      // 增加亲密度
+      this.claw.addBond(5);
+      
+      await this.saveGame();
+      
+      return {
+        completed: true,
+        reward: this.dailyTask.reward
+      };
+    }
+    
+    await this.saveGame();
+    return { completed: false, progress: this.dailyTask.progress };
+  }
+  
+  // 🎲 触发随机事件
+  triggerEvent() {
+    const event = triggerRandomEvent(this.gameState.state);
+    
+    if (event) {
+      // 应用事件奖励
+      if (event.reward.shells) {
+        this.inventory.addShells(event.reward.shells);
+      }
+      if (event.reward.bond) {
+        this.claw.addBond(event.reward.bond);
+      }
+      if (event.reward.item) {
+        const item = SPECIAL_DROPS[event.reward.item];
+        if (item) {
+          this.specialItems[item.id] = (this.specialItems[item.id] || 0) + 1;
+        }
+      }
+      
+      this.saveGame();
+      
+      return {
+        triggered: true,
+        event,
+        message: randomMessage(EVENT_MESSAGES[event.id] || [event.message])
+      };
+    }
+    
+    return { triggered: false };
+  }
+  
+  // 获取特殊物品列表
+  getSpecialItems() {
+    return Object.entries(this.specialItems).map(([id, count]) => ({
+      ...SPECIAL_DROPS[id],
+      count
+    })).filter(item => item.id);
+  }
+  
+  // 💎 使用特殊物品
+  async useSpecialItem(itemId) {
+    const item = SPECIAL_DROPS[itemId];
+    
+    if (!item || !this.specialItems[itemId] || this.specialItems[itemId] <= 0) {
+      return { success: false, message: '你没有这个物品' };
+    }
+    
+    // 消耗物品
+    this.specialItems[itemId]--;
+    if (this.specialItems[itemId] === 0) {
+      delete this.specialItems[itemId];
+    }
+    
+    const effect = item.effect || {};
+    const results = [];
+    
+    // 时间沙砾 - 缩短旅行时间
+    if (effect.time_reduce && this.gameState.state === CLAW_STATE.TRAVELING) {
+      const currentEnd = new Date(this.gameState.travel_end);
+      const newEnd = new Date(currentEnd.getTime() - effect.time_reduce * 60 * 1000);
+      this.gameState.travel_end = newEnd.toISOString();
+      results.push(`旅行时间缩短了 ${effect.time_reduce} 分钟！`);
+    }
+    
+    // 成长药水
+    if (effect.growth_bonus) {
+      this.claw.total_days += effect.growth_bonus;
+      results.push(`🦞 成长了 ${effect.growth_bonus} 天！`);
+    }
+    
+    // 传送石
+    if (effect.instant_return && this.gameState.state === CLAW_STATE.TRAVELING) {
+      this.gameState.travel_end = new Date().toISOString();
+      results.push('🦞 即将立即返回！');
+    }
+    
+    // 出售物品
+    if (effect.sell_price) {
+      this.inventory.addShells(effect.sell_price);
+      results.push(`出售获得 ${effect.sell_price} 个贝壳！`);
+    }
+    
+    await this.saveGame();
+    
+    return {
+      success: true,
+      message: `使用了 ${item.emoji} ${item.name}`,
+      effects: results
+    };
   }
 
   // ========== 核心游戏循环 ==========
@@ -79,6 +354,9 @@ export class GameEngine {
     
     // 检查是否需要更新旅行状态
     this.updateTravelState();
+    
+    // 🏆 检查里程碑（在获取状态时顺便检查）
+    const newMilestones = this.checkMilestones();
     
     const clawStatus = this.claw.getStatus();
     const state = this.gameState.state;
@@ -98,6 +376,9 @@ export class GameEngine {
         message = randomMessage(STATUS_MESSAGES.just_returned);
         break;
     }
+    
+    // 📋 确保每日任务已生成
+    this.checkDailyTask();
 
     return {
       claw: clawStatus,
@@ -105,7 +386,16 @@ export class GameEngine {
       message,
       shells: this.inventory.getShells(),
       location: this.gameState.current_location,
-      progress: this.calculateTravelProgress()
+      progress: this.calculateTravelProgress(),
+      bond: {
+        level: this.claw.bond_level,
+        title: this.claw.getBondTitle(),
+        today: this.claw.bond_today,
+        consecutive: this.claw.consecutive_days
+      },
+      dailyTask: this.dailyTask,
+      newMilestones,
+      luckModifier: this.getLuckModifier()
     };
   }
 
@@ -139,7 +429,7 @@ export class GameEngine {
   }
 
   // 收割贝壳
-  collectShells() {
+  async collectShells() {
     const now = new Date();
     const lastCollect = new Date(this.gameState.last_shell_collection);
     const hoursPassed = (now - lastCollect) / (1000 * 60 * 60);
@@ -159,7 +449,14 @@ export class GameEngine {
 
     this.inventory.addShells(total);
     this.gameState.last_shell_collection = now.toISOString();
-    this.saveGame();
+    
+    // 🎁 随机掉落
+    const drop = await this.processDrop('collect');
+    
+    // 📋 更新任务进度
+    await this.updateTaskProgress('collect_shells', total);
+    
+    await this.saveGame();
 
     let messageKey = 'few';
     if (total >= 10) messageKey = 'many';
@@ -169,7 +466,8 @@ export class GameEngine {
       success: true,
       message: randomMessage(COLLECT_MESSAGES[messageKey], { count: total }),
       shells: total,
-      total_shells: this.inventory.getShells()
+      total_shells: this.inventory.getShells(),
+      drop: drop.dropped ? drop : null
     };
   }
 
@@ -237,6 +535,9 @@ export class GameEngine {
     
     // 清空行囊（🦞 带走了）
     this.inventory.clearBackpack();
+    
+    // 📋 更新任务进度
+    await this.updateTaskProgress('send_travel');
     
     await this.saveGame();
 
@@ -315,6 +616,18 @@ export class GameEngine {
       souvenirs: this.generateSouvenirs(location, plan.luck),
       unlocks: this.checkUnlocks(location)
     };
+    
+    // 🎁 旅行额外掉落
+    const drop = await this.processDrop('travel');
+    if (drop.dropped) {
+      results.bonus_drop = drop;
+    }
+    
+    // 🏆 检查里程碑
+    results.milestones = this.checkMilestones();
+    
+    // 💕 增加亲密度
+    this.claw.addBond(3);
 
     // 更新状态
     this.gameState.state = CLAW_STATE.RESTING;
@@ -385,10 +698,20 @@ export class GameEngine {
     return unlocks;
   }
 
-  // 处理玩家消息（学习性格）
+  // 处理玩家消息（学习性格 + 触发事件）
   async handleMessage(message) {
     this.claw.learnFromInteraction(message);
+    
+    // 🎲 概率触发随机事件
+    const event = this.triggerEvent();
+    
+    // 📋 更新任务进度
+    await this.updateTaskProgress('interact');
+    await this.updateTaskProgress('check_status');
+    
     await this.saveGame();
+    
+    return event;
   }
 
   // 获取图鉴
@@ -402,7 +725,6 @@ export class GameEngine {
 
   // 获取商店
   getShop() {
-    const { getShopItems } = await import('../content/items.js');
     return {
       items: Object.values(getShopItems()),
       shells: this.inventory.getShells()

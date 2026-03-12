@@ -74,6 +74,16 @@ export class Claw {
       curious: 0,
       lazy: 0
     };
+    
+    // 💕 亲密度系统
+    this.bond_level = 0; // 0-1000
+    this.bond_today = 0; // 今日已获得的亲密度（每日上限）
+    this.last_interaction = null;
+    
+    // 🏆 里程碑追踪
+    this.milestones_reached = []; // 已触发的里程碑 [10, 20, 30...]
+    this.consecutive_days = 0; // 连续互动天数
+    this.last_login_date = null;
   }
 
   // 获取当前阶段
@@ -94,7 +104,7 @@ export class Claw {
     return Math.min(currentInStage / stageDuration, 1);
   }
 
-  // 记录玩家互动，学习性格
+  // 记录玩家互动，学习性格，增加亲密度
   learnFromInteraction(message) {
     this.interaction_count++;
     
@@ -108,6 +118,85 @@ export class Claw {
         this.traits.push(type);
       }
     }
+    
+    // 💕 增加亲密度
+    this.addBond(1);
+    this.last_interaction = new Date().toISOString();
+  }
+  
+  // 💕 增加亲密度
+  addBond(amount) {
+    const today = new Date().toDateString();
+    
+    // 检查是否是新的一天
+    if (this.last_login_date !== today) {
+      // 检查是否是连续登录
+      const lastDate = this.last_login_date ? new Date(this.last_login_date) : null;
+      const todayDate = new Date();
+      if (lastDate) {
+        const diffDays = Math.floor((todayDate - lastDate) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          this.consecutive_days++;
+        } else if (diffDays > 1) {
+          this.consecutive_days = 1;
+        }
+      } else {
+        this.consecutive_days = 1;
+      }
+      
+      this.last_login_date = today;
+      this.bond_today = 0;
+    }
+    
+    // 每日亲密度上限 50（连续登录奖励上限提升）
+    const dailyLimit = 50 + this.consecutive_days * 5;
+    const remaining = dailyLimit - this.bond_today;
+    const actualGain = Math.min(amount, remaining);
+    
+    if (actualGain > 0) {
+      this.bond_level = Math.min(this.bond_level + actualGain, 1000);
+      this.bond_today += actualGain;
+    }
+    
+    return actualGain;
+  }
+  
+  // 🏆 检查并更新里程碑
+  checkMilestones() {
+    const progress = Math.floor(this.getStageProgress() * 100);
+    const newMilestones = [];
+    
+    for (let m = 10; m <= 100; m += 10) {
+      if (progress >= m && !this.milestones_reached.includes(m)) {
+        this.milestones_reached.push(m);
+        newMilestones.push(m);
+      }
+    }
+    
+    return newMilestones;
+  }
+  
+  // 📊 获取亲密度等级名称
+  getBondTitle() {
+    const titles = [
+      { level: 0, name: '陌生人', emoji: '😐' },
+      { level: 10, name: '认识的人', emoji: '🙂' },
+      { level: 30, name: '朋友', emoji: '😊' },
+      { level: 60, name: '好朋友', emoji: '😄' },
+      { level: 100, name: '挚友', emoji: '🥰' },
+      { level: 200, name: '最佳伙伴', emoji: '🤗' },
+      { level: 350, name: '灵魂伴侣', emoji: '💕' },
+      { level: 500, name: '家人', emoji: '👨‍👩‍👧' },
+      { level: 750, name: '传奇羁绊', emoji: '✨' },
+      { level: 1000, name: '永恒之约', emoji: '💎' }
+    ];
+    
+    for (let i = titles.length - 1; i >= 0; i--) {
+      if (this.bond_level >= titles[i].level) {
+        return titles[i];
+      }
+    }
+    return titles[0];
   }
 
   // 获取主导性格（用于图片生成）
@@ -225,7 +314,13 @@ export class Claw {
       total_days: this.total_days,
       interaction_count: this.interaction_count,
       traits: this.traits,
-      personality_scores: this.personality_scores
+      personality_scores: this.personality_scores,
+      bond_level: this.bond_level,
+      bond_today: this.bond_today,
+      last_interaction: this.last_interaction,
+      milestones_reached: this.milestones_reached,
+      consecutive_days: this.consecutive_days,
+      last_login_date: this.last_login_date
     };
   }
 
@@ -237,6 +332,12 @@ export class Claw {
     claw.interaction_count = data.interaction_count;
     claw.traits = data.traits || [];
     claw.personality_scores = data.personality_scores || {};
+    claw.bond_level = data.bond_level || 0;
+    claw.bond_today = data.bond_today || 0;
+    claw.last_interaction = data.last_interaction;
+    claw.milestones_reached = data.milestones_reached || [];
+    claw.consecutive_days = data.consecutive_days || 0;
+    claw.last_login_date = data.last_login_date;
     return claw;
   }
 }
