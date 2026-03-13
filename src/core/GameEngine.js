@@ -30,12 +30,14 @@ import {
   SPECIAL_DROPS 
 } from './Rewards.js';
 import {
-  generateReminder,
-  generateDailyReport,
+  checkGreeting,
+  generateGreeting,
+  getNextGreetingTime,
+  getTodayGreetingStats,
+  updateDailyStats,
   shouldRemind,
   getCurrentTimeSlot,
-  getNextReminderTime,
-  getIntervalMessage
+  REMINDER_TYPES
 } from './HealthReminder.js';
 
 // 🦞 状态枚举
@@ -113,58 +115,74 @@ export class GameEngine {
     });
   }
   
-  // ========== ⏰ 健康提醒系统 ==========
+  // ========== ⏰ Claw 主动问候系统 ==========
   
-  // 检查健康统计日期，跨天重置
-  checkHealthStatsDate() {
-    const today = new Date().toDateString();
-    if (this.healthStats.lastDate !== today) {
-      // 跨天了，检查是否需要发送昨日报告
-      const shouldSendReport = this.healthStats.lastDate && this.healthStats.reminders > 0;
-      
-      // 重置统计
-      this.healthStats = { reminders: 0, water: 0, lastDate: today };
-      this.saveGame();
-      
-      return shouldSendReport ? this.generateDailyReport() : null;
-    }
-    return null;
-  }
-  
-  // 获取健康提醒
-  getHealthReminder(isFirst = false) {
-    // 检查是否应该提醒
+  // 检查是否需要发送问候（主入口）
+  checkGreeting() {
+    // 检查设置
     if (!shouldRemind(this.healthSettings)) {
       return null;
     }
     
-    const reminder = generateReminder(null, isFirst);
-    if (reminder) {
-      // 更新统计
-      this.healthStats.reminders++;
-      if (reminder.type === 'hydrate') {
-        this.healthStats.water += 175; // 平均 150-200ml
-      }
-      this.saveGame();
-      
-      return {
-        ...reminder,
-        intervalMsg: getIntervalMessage()
-      };
+    // 检查问候调度
+    const greetingInfo = checkGreeting(this.claw);
+    if (!greetingInfo) {
+      return null;
     }
-    return null;
+    
+    // 准备上下文
+    const context = {};
+    
+    // 早安：准备昨晚回顾
+    if (greetingInfo.type === REMINDER_TYPES.MORNING) {
+      if (this.claw.lastTravelSummary) {
+        const travelTime = new Date(this.claw.lastTravelSummary.timestamp);
+        const hour = travelTime.getHours();
+        const timeDesc = hour >= 22 ? '深夜' : hour >= 18 ? '傍晚' : '下午';
+        context.travelSummary = {
+          time: timeDesc,
+          location: this.claw.lastTravelSummary.location,
+          souvenir: this.claw.lastTravelSummary.souvenir
+        };
+      } else if (this.claw.lastNightActivity) {
+        context.nightActivity = this.claw.lastNightActivity;
+      }
+    }
+    
+    // 生成问候消息
+    const message = generateGreeting(this.claw, greetingInfo.type, context);
+    
+    // 保存游戏（更新了 greetingSchedule）
+    this.saveGame();
+    
+    return {
+      type: greetingInfo.type,
+      hour: greetingInfo.hour,
+      minute: greetingInfo.minute,
+      message,
+      isGreeting: true
+    };
   }
   
-  // 生成每日健康报告
-  generateDailyReport() {
-    return generateDailyReport(this.healthStats);
+  // 获取下次问候时间
+  getNextGreetingTime() {
+    return getNextGreetingTime(this.claw);
   }
   
-  // 获取健康设置
+  // 获取今日问候统计
+  getTodayGreetingStats() {
+    return getTodayGreetingStats(this.claw);
+  }
+  
+  // 获取健康设置（兼容旧版）
   getHealthSettings() {
+    const stats = getTodayGreetingStats(this.claw);
     return {
       ...this.healthSettings,
-      stats: this.healthStats
+      nextTime: stats.nextTime,
+      todayCount: stats.todayCount,
+      completed: stats.completed,
+      total: stats.total
     };
   }
   
@@ -343,6 +361,10 @@ export class GameEngine {
       
       // 增加亲密度
       this.claw.addBond(5);
+      
+      // 📝 更新每日统计
+      updateDailyStats(this.claw, 'task');
+      updateDailyStats(this.claw, 'bond', 5);
       
       await this.saveGame();
       
@@ -556,6 +578,9 @@ export class GameEngine {
     
     // 📋 更新任务进度
     await this.updateTaskProgress('collect_shells', total);
+    
+    // 📝 更新每日统计
+    updateDailyStats(this.claw, 'shells', total);
     
     await this.saveGame();
 
@@ -809,6 +834,10 @@ export class GameEngine {
     // 📋 更新任务进度
     await this.updateTaskProgress('interact');
     await this.updateTaskProgress('check_status');
+    
+    // 📝 更新每日统计
+    updateDailyStats(this.claw, 'interaction');
+    updateDailyStats(this.claw, 'bond', 1); // 互动增加亲密度
     
     await this.saveGame();
     

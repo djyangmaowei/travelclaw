@@ -8,8 +8,7 @@
     "start": "node src/index.js",
     "build": "echo 'No build step required'",
     "test": "node --test src/**/*.test.js",
-    "setup": "node scripts/setup.js",
-    "install:skill": "node scripts/install.js"
+    "setup": "node scripts/setup.js"
   },
   "keywords": [
     "openclaw",
@@ -34,6 +33,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.0"
   },
   "openclaw": {
     "skill": true,

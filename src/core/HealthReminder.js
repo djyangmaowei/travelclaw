@@ -1,342 +1,256 @@
 /**
- * ⏰ TravelClaw 健康提醒系统 - "微习惯闹钟"
+ * ⏰ TravelClaw 问候调度系统 - "Claw 的贴心陪伴"
  * 
- * 🦞 不仅爱旅行，还关心你的健康！
- * 每 45 分钟温柔提醒：喝水、活动、提肛
+ * 🦞 Claw 主动关心主人的新方式
+ * - 早上 9 点到晚上 10 点，每小时一次问候
+ * - 每个整点区间内随机时间点推送
+ * - 早安/日常/晚安，三种模式自然切换
  */
 
-// 提醒类型
+import {
+  generateMorningGreeting,
+  generateEveningGreeting,
+  generateDailyGreeting
+} from '../content/Greetings.js';
+
+// 提醒类型（用于兼容旧版健康提醒）
 export const REMINDER_TYPES = {
-  HYDRATE: 'hydrate',    // 喝水
-  MOVE: 'move',          // 站立/活动
-  KEGEL: 'kegel'         // 提肛
+  MORNING: 'morning',   // 早安
+  DAILY: 'daily',       // 日常
+  EVENING: 'evening'    // 晚安
 };
-
-// 时间段配置
-export const TIME_SLOTS = {
-  morning: {     // 09:00 - 12:00 高效办公期
-    start: 9,
-    end: 12,
-    style: '高效',
-    types: [REMINDER_TYPES.HYDRATE, REMINDER_TYPES.MOVE, REMINDER_TYPES.KEGEL]
-  },
-  noon: {        // 12:00 - 14:30 代谢高峰期
-    start: 12,
-    end: 14.5,
-    style: '轻松',
-    types: [REMINDER_TYPES.HYDRATE, REMINDER_TYPES.MOVE]
-  },
-  afternoon: {   // 14:30 - 18:30 专注冲刺期
-    start: 14.5,
-    end: 18.5,
-    style: '赋能',
-    types: [REMINDER_TYPES.HYDRATE, REMINDER_TYPES.KEGEL, REMINDER_TYPES.MOVE]
-  },
-  evening: {     // 18:30 - 22:00 夜间恢复期
-    start: 18.5,
-    end: 22,
-    style: '柔和',
-    types: [REMINDER_TYPES.MOVE, REMINDER_TYPES.HYDRATE]
-  }
-};
-
-// 📝 文案库 - 每个类型 50+ 条随机文案
-export const REMINDER_MESSAGES = {
-  [REMINDER_TYPES.HYDRATE]: {
-    icon: '💧',
-    title: '该补水了',
-    tips: '小口慢饮 150-200ml',
-    messages: [
-      '该喝第一口温水了。',
-      '你的水杯快干了，喂～',
-      '水是最好的咖啡伴侣，来一口？',
-      '细胞在喊渴，快给它们点水喝。',
-      '喝水时间到！150ml 就行。',
-      '咕噜咕噜，该喝水啦。',
-      '身体燃料箱需要补充 💧',
-      '一杯温水，唤醒沉睡的代谢。',
-      '记得补水，促进循环。',
-      '水，生命之源，喝一口吧。',
-      '你的肾脏在感谢你（如果你喝水的话）。',
-      '下午茶时间，水比奶茶香。',
-      '今日份水分摄入进度 +1',
-      '嘴巴干了吗？该喝水了。',
-      '深呼吸，然后喝口水。',
-      ' hydration check! 💧',
-      '水是免费的护肤品，多喝点。',
-      '别让身体 drought（干旱）了。',
-      '喝口水，再继续战斗。',
-      '小口慢饮，温润身心。',
-      '水，最好的饮料，没有之一。',
-      '你的大脑需要水来思考。',
-      '补水时刻，暂停 30 秒。',
-      '一杯水，一份关怀。',
-      '喝水不是任务，是对自己好。',
-      '该浇水了（对你的身体）。',
-      '水，让身体流动起来。',
-      '脱水警告 ⚠️ 快喝水！',
-      '今日水分 KPI 还差一点点。',
-      '喝水，是最简单的养生。',
-      '来，干杯（对水杯）。',
-      '💧 滴，补水卡',
-      '身体像海绵，需要水分。',
-      '喝水时间，别找借口。',
-      '一杯温水，肠胃喜欢。',
-      '水是身体的润滑油。',
-      '现在喝水，等会精神。',
-      '补水，从这一口开始。',
-      '你的细胞在翘首以盼。',
-      '喝口水，润润喉。',
-      '水，让血液流动更顺畅。',
-      '别等渴了才喝，现在就来。',
-      '每日 8 杯水，这是第 N 杯。',
-      '喝水，给身体降降温。',
-      '一杯水，一份清醒。',
-      '水，是最好的排毒剂。',
-      '喝口水，再继续刷手机。',
-      '💧 滴答，喝水时间',
-      '身体燃料不足，请补水。',
-      '温水入喉，舒服～'
-    ]
-  },
-  [REMINDER_TYPES.MOVE]: {
-    icon: '🦵',
-    title: '该活动了',
-    tips: '离开座位，站立 1 分钟',
-    messages: [
-      '离开椅子，站立 30 秒。',
-      '拒绝久坐，站起来走两步。',
-      '屁股离椅，健康加分！',
-      '站起来，看看窗外。',
-      '久坐是隐形杀手，快起来！',
-      '离开座位，伸个懒腰。',
-      '站立 1 分钟，血液循环起来。',
-      '起来活动活动，别当土豆。',
-      '放下手机，离开沙发。',
-      '站起来，扭扭腰。',
-      '久坐提醒：你该动了！',
-      '离开工位，走两步。',
-      '站起来，垫垫脚。',
-      '活动一下，别僵住了。',
-      '起身，阔胸深呼吸。',
-      '久坐族，该起义了！',
-      '站起来，比坐着帅。',
-      '离开座位 60 秒，计时开始。',
-      '屁股抗议了，快起来！',
-      '站立模式，启动！',
-      '起来走走，脑子更清醒。',
-      '久坐伤身，站立救命。',
-      '离开椅子，做个人吧。',
-      '站起来，你就是巨人。',
-      '活动筋骨，预防职业病。',
-      '起身，去倒杯水（顺便喝水）。',
-      '站立 1 分钟，燃烧 1 卡路里。',
-      '别焊在椅子上了，起来！',
-      '久坐 = 慢性自杀，快中断！',
-      '站起来，世界不一样。',
-      '起身，扭胯 10 次。',
-      '离开座位，看看远方。',
-      '站立，是最好的休息。',
-      '起来活动，别让肌肉睡着。',
-      '久坐提醒 ⏰ 该动了！',
-      '站起来，像 🦞 一样伸展！',
-      '离开椅子，自由 1 分钟。',
-      '起身，做个深呼吸。',
-      '站立，让脊柱放松一下。',
-      '起来走走，效率更高。',
-      '久坐不好，站着挺好。',
-      '离开座位，去窗边看看。',
-      '站起来，活动活动腿脚。',
-      '久坐中断！快起来！',
-      '站立 1 分钟，健康一整天。',
-      '起来，别窝着了。',
-      '离开椅子，给屁股放个假。',
-      '站立模式 ON',
-      '久坐警报 🚨 请离开座位！',
-      '站起来，你行的！'
-    ]
-  },
-  [REMINDER_TYPES.KEGEL]: {
-    icon: '🍑',
-    title: '提肛时间',
-    tips: '收缩 3-5 秒，放松 5 秒，重复 10-15 次',
-    messages: [
-      '收缩盆底肌（提肛）15 次，保持核心稳定。',
-      '提肛大神正在看着你 👀',
-      '隐形锻炼：提肛 10 次，无人知晓。',
-      '坚持提肛，它是你久坐的防弹衣。',
-      '悄悄提肛，默默变强。',
-      '提肛运动，现在开始。',
-      '收缩 3 秒，放松 5 秒，重复 10 次。',
-      '提肛，是最好的隐形健身。',
-      '别人看不出，但你在变强。',
-      '提肛 15 次，保护前列腺/盆底肌。',
-      '悄悄做，大声笑（提肛）。',
-      '提肛打卡，无人知道。',
-      '隐形锻炼，提肛开始！',
-      '收缩，保持，放松。重复。',
-      '提肛，让下半身更强壮。',
-      '现在提肛，未来受益。',
-      '提肛 10 次，健康投资。',
-      '别人刷手机，你提肛。赢！',
-      '提肛，是成年人的秘密武器。',
-      '收缩盆底肌， silently。',
-      '提肛时间，别告诉别人 🤫',
-      '做 10 次提肛，奖励自己。',
-      '提肛，预防痔疮和尿失禁。',
-      '隐形运动，提肛开始。',
-      '收缩，保持，释放。重复 10 次。',
-      '提肛，是给自己的礼物。',
-      '现在提肛，老了不后悔。',
-      '提肛 15 次，计时开始。',
-      '悄悄变强，从提肛开始。',
-      '提肛，最简单的健身。',
-      '别人看不出你在锻炼。',
-      '提肛，让核心更稳定。',
-      '收缩肌肉，保持 3 秒。',
-      '提肛打卡 ✓',
-      '隐形锻炼大师，就是你了。',
-      '提肛 10 次，现在！',
-      '保护盆底肌，从提肛开始。',
-      '提肛，是自律的体现。',
-      '收缩 5 秒，放松 5 秒。',
-      '提肛，久坐族的救星。',
-      '现在做提肛，没人知道。',
-      '提肛 15 次，开始！',
-      '悄悄提肛，惊艳所有人。',
-      '盆底肌训练时间到！',
-      '提肛，是最好的保健。',
-      '收缩，保持，放松。10 次。',
-      '提肛大神，请开始表演。',
-      '隐形健身，提肛为先。',
-      '提肛，让下半身更年轻。',
-      '做提肛，做更好的自己。'
-    ]
-  }
-};
-
-// 开场白和结束语
-export const GREETINGS = {
-  morning: [
-    '早安！🦞 开始今天的健康之旅吧～',
-    '新的一天，新的健康！🦞 来提醒你了。',
-    '早上好！准备好保持健康了吗？',
-    '🦞 已上线，健康提醒开始！'
-  ],
-  generic: [
-    '🦞 提醒你：',
-    '健康小助手 🦞 来了：',
-    '微习惯时间：',
-    '🦞 敲了敲你：'
-  ]
-};
-
-// 每日报告模板
-export const DAILY_REPORT_TEMPLATES = [
-  '📊 今日健康报告：你打败了全国 {percent}% 的久坐族，喝水量达成 {water}ml！',
-  '🎉 今日战绩：完成 {reminders} 次提醒，{water}ml 水分摄入，超越 {percent}% 用户！',
-  '🌟 健康日报：{reminders} 次微习惯完成，{water}ml 水，你是前 {percent}%！',
-  '💪 今日成就：久坐中断 {reminders} 次，补水 {water}ml，打败了 {percent}% 的人！'
-];
 
 /**
- * 获取当前时间段
- * @returns {string} 时间段名称
+ * 生成每日推送时间表
+ * 9:00-22:00，每小时一个随机时间点
  */
-export function getCurrentTimeSlot() {
-  const hour = new Date().getHours();
-  const minute = new Date().getMinutes();
-  const time = hour + minute / 60;
-  
-  for (const [slotName, slot] of Object.entries(TIME_SLOTS)) {
-    if (time >= slot.start && time < slot.end) {
-      return slotName;
-    }
+export function generateDailySchedule() {
+  const slots = [];
+  for (let hour = 9; hour <= 21; hour++) {
+    // 每小时 0-59 分钟随机
+    const minute = Math.floor(Math.random() * 60);
+    slots.push({ 
+      hour, 
+      minute, 
+      done: false,
+      timestamp: new Date().setHours(hour, minute, 0, 0)
+    });
   }
-  return null; // 不在提醒时间段内
-}
-
-/**
- * 获取当前应该提醒的类型
- * @returns {string} 提醒类型
- */
-export function getCurrentReminderType() {
-  const slotName = getCurrentTimeSlot();
-  if (!slotName) return null;
-  
-  const slot = TIME_SLOTS[slotName];
-  const types = slot.types;
-  
-  // 根据时间循环选择类型
-  const minutes = new Date().getHours() * 60 + new Date().getMinutes();
-  const index = Math.floor(minutes / 45) % types.length;
-  
-  return types[index];
-}
-
-/**
- * 生成提醒消息
- * @param {string} type - 提醒类型
- * @param {boolean} isFirst - 是否是当天第一条
- * @returns {Object} 提醒内容
- */
-export function generateReminder(type = null, isFirst = false) {
-  if (!type) {
-    type = getCurrentReminderType();
-  }
-  
-  if (!type || !REMINDER_MESSAGES[type]) {
-    return null;
-  }
-  
-  const config = REMINDER_MESSAGES[type];
-  const message = config.messages[Math.floor(Math.random() * config.messages.length)];
-  
-  // 选择开场白
-  let greeting = '';
-  if (isFirst) {
-    const hour = new Date().getHours();
-    if (hour < 12) {
-      greeting = GREETINGS.morning[Math.floor(Math.random() * GREETINGS.morning.length)] + '\n\n';
-    }
-  }
-  
-  if (!greeting && Math.random() < 0.3) {
-    greeting = GREETINGS.generic[Math.floor(Math.random() * GREETINGS.generic.length)] + '\n';
-  }
-  
   return {
-    type,
-    icon: config.icon,
-    title: config.title,
-    message: greeting + config.icon + ' ' + message,
-    tip: config.tips,
-    timestamp: new Date().toISOString()
+    date: new Date().toDateString(),
+    slots,
+    firstGreetingDone: false,
+    eveningGreetingDone: false
   };
 }
 
 /**
- * 生成每日报告
- * @param {Object} stats - 统计数据
- * @returns {string} 报告内容
+ * 检查是否需要生成新的时间表
  */
-export function generateDailyReport(stats) {
-  const template = DAILY_REPORT_TEMPLATES[Math.floor(Math.random() * DAILY_REPORT_TEMPLATES.length)];
+export function shouldGenerateNewSchedule(claw) {
+  if (!claw.greetingSchedule) return true;
   
-  // 计算百分比（模拟算法）
-  const basePercent = Math.min(50 + stats.reminders * 2 + Math.floor(stats.water / 100), 95);
-  const percent = basePercent + Math.floor(Math.random() * 5);
-  
-  return template
-    .replace('{percent}', percent)
-    .replace('{water}', stats.water || 0)
-    .replace('{reminders}', stats.reminders || 0);
+  const today = new Date().toDateString();
+  return claw.greetingSchedule.date !== today;
 }
 
 /**
- * 检查是否应该发送提醒
- * @param {Object} settings - 用户设置
- * @returns {boolean}
+ * 获取或生成今日时间表
+ */
+export function getTodaySchedule(claw) {
+  if (shouldGenerateNewSchedule(claw)) {
+    claw.greetingSchedule = generateDailySchedule();
+    // 重置每日统计
+    claw.dailyStats = {
+      date: new Date().toDateString(),
+      interactions: 0,
+      shells: 0,
+      travel: null,
+      taskCompleted: false,
+      bond: 0,
+      greetingCount: 0
+    };
+  }
+  return claw.greetingSchedule;
+}
+
+/**
+ * 检查是否应该发送问候
+ * @returns {Object|null} 问候信息或 null
+ */
+export function checkGreeting(claw) {
+  const schedule = getTodaySchedule(claw);
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  
+  // 只在 9:00-22:00 之间
+  if (currentHour < 9 || currentHour > 21) return null;
+  
+  // 找到当前小时对应的 slot
+  const slot = schedule.slots.find(s => s.hour === currentHour);
+  if (!slot || slot.done) return null;
+  
+  // 当前时间是否已过随机时间点
+  if (currentMinute < slot.minute) return null;
+  
+  // 标记为已完成
+  slot.done = true;
+  
+  // 判断问候类型
+  let greetingType;
+  if (!schedule.firstGreetingDone && currentHour < 11) {
+    greetingType = REMINDER_TYPES.MORNING;
+    schedule.firstGreetingDone = true;
+  } else if (currentHour >= 20 && !schedule.eveningGreetingDone) {
+    greetingType = REMINDER_TYPES.EVENING;
+    schedule.eveningGreetingDone = true;
+  } else {
+    greetingType = REMINDER_TYPES.DAILY;
+  }
+  
+  // 更新统计
+  if (claw.dailyStats) {
+    claw.dailyStats.greetingCount++;
+  }
+  
+  return {
+    type: greetingType,
+    hour: currentHour,
+    minute: slot.minute
+  };
+}
+
+/**
+ * 生成问候消息
+ */
+export function generateGreeting(claw, greetingType, context = {}) {
+  switch (greetingType) {
+    case REMINDER_TYPES.MORNING:
+      return generateMorningGreeting(
+        claw, 
+        context.nightActivity,
+        context.travelSummary
+      );
+      
+    case REMINDER_TYPES.EVENING:
+      return generateEveningGreeting(
+        claw,
+        claw.dailyStats || {
+          interactions: 0,
+          shells: 0,
+          travel: null,
+          taskCompleted: false,
+          bond: 0
+        }
+      );
+      
+    case REMINDER_TYPES.DAILY:
+    default:
+      // 根据时间选择健康提醒类型
+      const hour = new Date().getHours();
+      let healthType = 'hydrate';
+      if (hour % 3 === 1) healthType = 'move';
+      else if (hour % 3 === 2) healthType = 'kegel';
+      
+      return generateDailyGreeting(claw, healthType);
+  }
+}
+
+/**
+ * 获取下次问候时间（用于显示）
+ */
+export function getNextGreetingTime(claw) {
+  const schedule = getTodaySchedule(claw);
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  
+  // 找到下一个未完成的 slot
+  for (const slot of schedule.slots) {
+    if (slot.done) continue;
+    
+    // 当前小时但时间还没到
+    if (slot.hour === currentHour && currentMinute < slot.minute) {
+      return `${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`;
+    }
+    // 未来的小时
+    if (slot.hour > currentHour) {
+      return `${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`;
+    }
+  }
+  
+  return null; // 今天的问候都完成了
+}
+
+/**
+ * 获取今日问候统计
+ */
+export function getTodayGreetingStats(claw) {
+  const schedule = getTodaySchedule(claw);
+  const completed = schedule.slots.filter(s => s.done).length;
+  const total = schedule.slots.length;
+  
+  return {
+    completed,
+    total,
+    nextTime: getNextGreetingTime(claw),
+    todayCount: claw.dailyStats?.greetingCount || 0
+  };
+}
+
+/**
+ * 更新每日统计（供 GameEngine 调用）
+ */
+export function updateDailyStats(claw, type, amount = 1) {
+  if (!claw.dailyStats) {
+    claw.dailyStats = {
+      date: new Date().toDateString(),
+      interactions: 0,
+      shells: 0,
+      travel: null,
+      taskCompleted: false,
+      bond: 0,
+      greetingCount: 0
+    };
+  }
+  
+  // 检查日期
+  if (claw.dailyStats.date !== new Date().toDateString()) {
+    // 跨天了，重置
+    claw.dailyStats = {
+      date: new Date().toDateString(),
+      interactions: 0,
+      shells: 0,
+      travel: null,
+      taskCompleted: false,
+      bond: 0,
+      greetingCount: claw.dailyStats.greetingCount || 0
+    };
+  }
+  
+  switch (type) {
+    case 'interaction':
+      claw.dailyStats.interactions += amount;
+      break;
+    case 'shells':
+      claw.dailyStats.shells += amount;
+      break;
+    case 'travel':
+      claw.dailyStats.travel = amount; // amount 是 {location, souvenir} 对象
+      break;
+    case 'task':
+      claw.dailyStats.taskCompleted = true;
+      break;
+    case 'bond':
+      claw.dailyStats.bond += amount;
+      break;
+  }
+}
+
+/**
+ * 检查健康设置（兼容旧版静默模式）
+ * @deprecated 新版问候系统暂不支持静默模式，保留接口
  */
 export function shouldRemind(settings = {}) {
   // 检查是否开启提醒
@@ -347,58 +261,36 @@ export function shouldRemind(settings = {}) {
     const now = new Date();
     const silentEnd = new Date(settings.silentUntil);
     if (now < silentEnd) return false;
-    // 静默期结束，自动关闭
     settings.silentMode = false;
   }
-  
-  // 检查是否在有效时间段
-  const hour = new Date().getHours();
-  const minute = new Date().getMinutes();
-  const time = hour + minute / 60;
-  
-  // 默认 09:00 - 22:00
-  const start = settings.startTime || 9;
-  const end = settings.endTime || 22;
-  
-  if (time < start || time >= end) return false;
   
   return true;
 }
 
 /**
- * 获取下次提醒时间
- * @param {number} intervalMinutes - 间隔分钟数
- * @returns {Date}
+ * 获取时间段配置（兼容旧版）
+ * @deprecated 新版使用小时随机时间
  */
-export function getNextReminderTime(intervalMinutes = 45) {
-  const now = new Date();
-  const next = new Date(now.getTime() + intervalMinutes * 60 * 1000);
-  return next;
+export function getCurrentTimeSlot() {
+  const hour = new Date().getHours();
+  
+  if (hour >= 9 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 14.5) return 'noon';
+  if (hour >= 14.5 && hour < 18.5) return 'afternoon';
+  if (hour >= 18.5 && hour < 22) return 'evening';
+  return null;
 }
 
-/**
- * 获取提醒间隔的文案
- * @returns {string}
- */
-export function getIntervalMessage() {
-  const messages = [
-    '（每 45 分钟提醒一次）',
-    '（45 分钟后见～）',
-    '（下次提醒：45 分钟后）',
-    ''
-  ];
-  return messages[Math.floor(Math.random() * messages.length)];
-}
-
+// 兼容旧版导出
 export default {
-  REMINDER_TYPES,
-  TIME_SLOTS,
-  REMINDER_MESSAGES,
-  generateReminder,
-  generateDailyReport,
+  generateDailySchedule,
+  getTodaySchedule,
+  checkGreeting,
+  generateGreeting,
+  getNextGreetingTime,
+  getTodayGreetingStats,
+  updateDailyStats,
   shouldRemind,
   getCurrentTimeSlot,
-  getCurrentReminderType,
-  getNextReminderTime,
-  getIntervalMessage
+  REMINDER_TYPES
 };

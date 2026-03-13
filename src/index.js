@@ -71,39 +71,53 @@ class TravelClawSkill {
   }
   
   /**
-   * ⏰ 启动健康提醒定时器
+   * ⏰ 启动 Claw 主动问候定时器
+   * 
+   * 新版机制：9:00-22:00，每小时随机时间点推送一次
+   * 以 Claw 主动发消息的形式，包含早安/日常/晚安三种模式
    */
   startHealthReminder(userId) {
     // 如果已有定时器，先清除
     this.stopHealthReminder(userId);
     
-    const interval = this.isTestMode ? 2 * 60 * 1000 : 45 * 60 * 1000; // 测试模式2分钟，正常45分钟
+    // 每分钟检查一次是否需要发送问候
+    const checkInterval = this.isTestMode ? 10 * 1000 : 60 * 1000; // 测试模式10秒，正常1分钟
     
     const timer = setInterval(async () => {
       try {
         const engine = await this.getEngine(userId);
         const settings = engine.getHealthSettings();
         
-        // 检查是否应该提醒
+        // 检查是否应该问候
         if (!settings.disabled) {
-          const reminder = engine.getHealthReminder();
-          if (reminder && this.onHealthReminder) {
-            this.onHealthReminder(userId, this.formatHealthReminder(reminder));
+          const greeting = engine.checkGreeting();
+          if (greeting && this.onHealthReminder) {
+            this.onHealthReminder(userId, {
+              text: greeting.message,
+              isGreeting: true,
+              type: greeting.type
+            });
           }
         }
       } catch (error) {
-        console.error('Health reminder error:', error);
+        console.error('Greeting check error:', error);
       }
-    }, interval);
+    }, checkInterval);
     
     this.reminderTimers.set(userId, timer);
     
-    // 返回首次提醒
+    // 立即检查一次（如果到了该问候的时间）
     return this.getEngine(userId).then(engine => {
       const settings = engine.getHealthSettings();
-      if (!settings.disabled && settings.stats.reminders === 0) {
-        const reminder = engine.getHealthReminder(true);
-        if (reminder) return this.formatHealthReminder(reminder);
+      if (!settings.disabled) {
+        const greeting = engine.checkGreeting();
+        if (greeting) {
+          return {
+            text: greeting.message,
+            isGreeting: true,
+            type: greeting.type
+          };
+        }
       }
       return null;
     });
@@ -735,10 +749,16 @@ class TravelClawSkill {
     return { text: lines.join('\n') };
   }
   
-  // ⏰ 格式化健康提醒
+  // ⏰ 格式化健康提醒（兼容旧版和新版问候）
   formatHealthReminder(reminder) {
     if (!reminder) return null;
     
+    // 新版问候直接返回消息
+    if (reminder.isGreeting) {
+      return { text: reminder.message };
+    }
+    
+    // 兼容旧版格式
     const lines = [
       `⏰ 微习惯闹钟`,
       '',
@@ -757,10 +777,10 @@ class TravelClawSkill {
   // ⏰ 格式化健康状态
   formatHealthStatus(engine) {
     const settings = engine.getHealthSettings();
-    const { stats } = settings;
+    const nextTime = engine.getNextGreetingTime();
     
     const lines = [
-      `⏰ 微习惯闹钟设置`,
+      `🦞 Claw 问候设置`,
       '',
       `状态: ${settings.disabled ? '❌ 已关闭' : '✅ 运行中'}`,
     ];
@@ -772,10 +792,17 @@ class TravelClawSkill {
     }
     
     lines.push('', '📊 今日统计:');
-    lines.push(`  提醒次数: ${stats.reminders}`);
-    lines.push(`  预估饮水: ${stats.water}ml`);
-    lines.push('', '⏱️ 提醒频率: 每 45 分钟');
-    lines.push('🕐 提醒时段: 09:00 - 22:00');
+    lines.push(`  已问候: ${settings.completed || 0}/${settings.total || 13} 次`);
+    lines.push(`  今日互动: ${engine.claw.dailyStats?.interactions || 0} 次`);
+    
+    if (nextTime) {
+      lines.push('', `⏰ 下次问候: ${nextTime}`);
+    } else {
+      lines.push('', '✅ 今天的问候都完成啦');
+    }
+    
+    lines.push('', '🕐 问候时段: 09:00 - 22:00');
+    lines.push('📱 每小时随机时间点，Claw 会主动找你聊天');
     
     lines.push('', '💡 可用指令:');
     lines.push('  健康 开启 / 关闭');
@@ -786,24 +813,43 @@ class TravelClawSkill {
     return { text: lines.join('\n') };
   }
   
-  // ⏰ 格式化健康报告
+  // ⏰ 格式化健康报告（今日统计）
   formatHealthReport(engine) {
-    const report = engine.generateDailyReport();
-    const settings = engine.getHealthSettings();
-    const { stats } = settings;
+    const stats = engine.claw.dailyStats || {
+      interactions: 0,
+      shells: 0,
+      greetingCount: 0,
+      travel: null,
+      taskCompleted: false,
+      bond: 0
+    };
     
     const lines = [
-      `📊 今日健康报告`,
+      `📊 今日与 🦞 的互动报告`,
       '',
-      report,
+      '🦞 的问候:',
+      `  今天来找你 ${stats.greetingCount || 0} 次`,
       '',
-      '📈 详细数据:',
-      `  完成提醒: ${stats.reminders} 次`,
-      `  预估饮水: ${stats.water}ml`,
-      `  目标达成: ${Math.min(100, Math.floor(stats.reminders / 17 * 100))}%`,
-      '',
-      '🦞 "继续保持，你是最棒的！"'
+      '📈 互动数据:',
+      `  聊天次数: ${stats.interactions} 次`,
+      `  收割贝壳: ${stats.shells} 个`,
     ];
+    
+    if (stats.travel) {
+      lines.push(`  旅行探险: ${stats.travel.location}`);
+    }
+    
+    if (stats.taskCompleted) {
+      lines.push(`  每日任务: ✅ 已完成`);
+    }
+    
+    lines.push(`  亲密度增加: +${stats.bond} 点`);
+    
+    lines.push('', '💕 当前羁绊:');
+    const bond = engine.claw.getBondTitle();
+    lines.push(`  ${bond.emoji} ${bond.name} (${engine.claw.bond_level} 点)`);
+    
+    lines.push('', '🦞 "有你的每一天都很开心！"');
     
     return { text: lines.join('\n') };
   }

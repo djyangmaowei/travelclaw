@@ -84,6 +84,18 @@ export class Claw {
     this.milestones_reached = []; // 已触发的里程碑 [10, 20, 30...]
     this.consecutive_days = 0; // 连续互动天数
     this.last_login_date = null;
+    
+    // 📝 问候系统数据
+    this.greetingSchedule = null;  // 每日问候时间表
+    this.dailyStats = null;        // 每日统计（用于晚安总结）
+    
+    // 🦞 当前活动状态（临时，不持久化）
+    this._currentActivity = null;
+    this._activitySince = null;
+    
+    // 🌙 昨晚活动记录（用于早安回顾）
+    this.lastNightActivity = null;  // { type, description, timestamp }
+    this.lastTravelSummary = null;  // { time, location, souvenir }
   }
 
   // 获取当前阶段
@@ -306,6 +318,22 @@ export class Claw {
     return `一只${desc} 🦞`;
   }
 
+  // 🌙 记录昨晚活动（睡前调用）
+  recordNightActivity(activity) {
+    this.lastNightActivity = {
+      ...activity,
+      timestamp: new Date().toISOString()
+    };
+  }
+  
+  // 🧳 记录旅行摘要（旅行归来时调用）
+  recordTravelSummary(summary) {
+    this.lastTravelSummary = {
+      ...summary,
+      timestamp: new Date().toISOString()
+    };
+  }
+  
   // 序列化
   toJSON() {
     return {
@@ -320,7 +348,12 @@ export class Claw {
       last_interaction: this.last_interaction,
       milestones_reached: this.milestones_reached,
       consecutive_days: this.consecutive_days,
-      last_login_date: this.last_login_date
+      last_login_date: this.last_login_date,
+      // 问候系统数据
+      greetingSchedule: this.greetingSchedule,
+      dailyStats: this.dailyStats,
+      lastNightActivity: this.lastNightActivity,
+      lastTravelSummary: this.lastTravelSummary
     };
   }
 
@@ -338,6 +371,11 @@ export class Claw {
     claw.milestones_reached = data.milestones_reached || [];
     claw.consecutive_days = data.consecutive_days || 0;
     claw.last_login_date = data.last_login_date;
+    // 问候系统数据（兼容旧数据）
+    claw.greetingSchedule = data.greetingSchedule || null;
+    claw.dailyStats = data.dailyStats || null;
+    claw.lastNightActivity = data.lastNightActivity || null;
+    claw.lastTravelSummary = data.lastTravelSummary || null;
     return claw;
   }
 }
