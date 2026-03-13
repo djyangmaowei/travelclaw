@@ -72,7 +72,7 @@ export class ImageClient {
   /**
    * 生成旅行明信片
    */
-  async generatePostcard(claw, locationId, activity) {
+  async generatePostcard(claw, locationId, activity, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     const prompt = builder.buildTravelPrompt(locationId, activity);
@@ -80,33 +80,34 @@ export class ImageClient {
     console.log('🎨 生成明信片...');
     console.log('Prompt:', prompt.substring(0, 80) + '...');
     
-    return this.generateImage(prompt, { size: '1024x1024' });
+    // 允许调用者通过 options 覆盖默认设置
+    return this.generateImage(prompt, options);
   }
 
   /**
    * 生成自拍
    */
-  async generateSelfie(claw, decorations) {
+  async generateSelfie(claw, decorations, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     const prompt = builder.buildSelfiePrompt(decorations);
     
     console.log('📸 生成自拍...');
     
-    return this.generateImage(prompt, { size: '1024x1024' });
+    return this.generateImage(prompt, options);
   }
 
   /**
    * 生成成长纪念照
    */
-  async generateMilestonePhoto(claw, oldStage, newStage) {
+  async generateMilestonePhoto(claw, oldStage, newStage, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     const prompt = builder.buildMilestonePrompt(oldStage, newStage);
     
     console.log('🎉 生成成长纪念照...');
     
-    return this.generateImage(prompt, { size: '1024x1024' });
+    return this.generateImage(prompt, options);
   }
 }
 
@@ -122,7 +123,29 @@ class OpenAICompatibleClient {
   }
 
   async generateImage(prompt, options = {}) {
-    const { size = '1024x1024', n = 1, quality = 'standard' } = options;
+    const { 
+      size = '1024x1024', 
+      n = 1, 
+      quality = 'standard',
+      response_format = 'b64_json'  // 允许调用者指定 'url' 或 'b64_json'
+    } = options;
+
+    const requestBody = {
+      model: this.model,
+      prompt,
+      n,
+      quality
+    };
+
+    // 只有指定了 size 才加入请求（某些 API 不支持自定义尺寸）
+    if (size) {
+      requestBody.size = size;
+    }
+
+    // 如果明确指定了 response_format 才加入
+    if (response_format) {
+      requestBody.response_format = response_format;
+    }
 
     const response = await fetch(`${this.baseUrl}/v1/images/generations`, {
       method: 'POST',
@@ -130,14 +153,7 @@ class OpenAICompatibleClient {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      body: JSON.stringify({
-        model: this.model,
-        prompt,
-        size,
-        n,
-        quality,
-        response_format: 'b64_json'
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -151,11 +167,38 @@ class OpenAICompatibleClient {
       throw new Error('No image data in response');
     }
 
-    return {
-      imageData: data.data[0].b64_json,
-      mimeType: 'image/png',
-      url: data.data[0].url || null
-    };
+    const imageData = data.data[0];
+
+    // 优先使用 base64，如果没有则尝试 URL
+    if (imageData.b64_json) {
+      return {
+        imageData: imageData.b64_json,
+        mimeType: this.detectMimeType(imageData.b64_json),
+        url: imageData.url || null
+      };
+    }
+
+    // 如果只有 URL，返回 URL 让上层处理
+    if (imageData.url) {
+      return {
+        imageData: null,
+        mimeType: null,
+        url: imageData.url
+      };
+    }
+
+    throw new Error('No image data in response');
+  }
+
+  /**
+   * 从 base64 数据头检测 mime type
+   */
+  detectMimeType(base64Data) {
+    if (base64Data.startsWith('/9j/')) return 'image/jpeg';
+    if (base64Data.startsWith('iVBOR')) return 'image/png';
+    if (base64Data.startsWith('R0lGOD')) return 'image/gif';
+    if (base64Data.startsWith('UklGR')) return 'image/webp';
+    return 'image/png'; // 默认
   }
 }
 

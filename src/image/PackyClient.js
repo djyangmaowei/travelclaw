@@ -24,27 +24,37 @@ export class PackyClient {
    */
   async generateImage(prompt, options = {}) {
     const {
-      size = '1920x1920',
+      size = null,  // 不再强制默认尺寸，让 API 自行决定
       n = 1,
-      responseFormat = 'b64_json', // 'b64_json' 或 'url'
+      responseFormat = null, // 不强制指定，让 API 返回其默认格式
       seed = -1
     } = options;
 
     try {
+      const requestBody = {
+        model: this.model,
+        prompt,
+        n,
+        seed
+      };
+
+      // 只有明确指定了 size 才加入请求
+      if (size) {
+        requestBody.size = size;
+      }
+
+      // 只有明确指定了 response_format 才加入请求
+      if (responseFormat) {
+        requestBody.response_format = responseFormat;
+      }
+
       const response = await fetch(`${this.baseUrl}/v1/images/generations`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          prompt,
-          size,
-          n,
-          response_format: responseFormat,
-          seed
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -61,24 +71,19 @@ export class PackyClient {
       const imageData = data.data[0];
 
       // 处理 base64 格式
-      if (responseFormat === 'b64_json' && imageData.b64_json) {
+      if (imageData.b64_json) {
         return {
           imageData: imageData.b64_json,
-          mimeType: 'image/png',
-          url: null
+          mimeType: this.detectMimeType(imageData.b64_json),
+          url: imageData.url || null
         };
       }
 
-      // 处理 URL 格式
-      if (responseFormat === 'url' && imageData.url) {
-        // 下载图片
-        const imageResponse = await fetch(imageData.url);
-        const buffer = await imageResponse.arrayBuffer();
-        const base64 = Buffer.from(buffer).toString('base64');
-        
+      // 处理 URL 格式 - 支持返回 URL 而不强制下载
+      if (imageData.url) {
         return {
-          imageData: base64,
-          mimeType: 'image/png',
+          imageData: null,
+          mimeType: null,
           url: imageData.url
         };
       }
@@ -91,13 +96,25 @@ export class PackyClient {
   }
 
   /**
+   * 从 base64 数据头检测 mime type
+   */
+  detectMimeType(base64Data) {
+    if (base64Data.startsWith('/9j/')) return 'image/jpeg';
+    if (base64Data.startsWith('iVBOR')) return 'image/png';
+    if (base64Data.startsWith('R0lGOD')) return 'image/gif';
+    if (base64Data.startsWith('UklGR')) return 'image/webp';
+    return 'image/png'; // 默认
+  }
+
+  /**
    * 生成旅行明信片
    * @param {Claw} claw - 🦞 角色
    * @param {string} locationId - 地点 ID
    * @param {string} activity - 活动
+   * @param {Object} options - 生成选项
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generatePostcard(claw, locationId, activity) {
+  async generatePostcard(claw, locationId, activity, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -106,19 +123,17 @@ export class PackyClient {
     console.log('🎨 生成明信片...');
     console.log('Prompt:', prompt.substring(0, 100) + '...');
     
-    return this.generateImage(prompt, {
-      size: '1024x1024',
-      seed: -1
-    });
+    return this.generateImage(prompt, options);
   }
 
   /**
    * 生成自拍
    * @param {Claw} claw - 🦞 角色
    * @param {Array} decorations - 家园装饰
+   * @param {Object} options - 生成选项
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateSelfie(claw, decorations) {
+  async generateSelfie(claw, decorations, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -126,10 +141,7 @@ export class PackyClient {
     
     console.log('📸 生成自拍...');
     
-    return this.generateImage(prompt, {
-      size: '1024x1024',
-      seed: -1
-    });
+    return this.generateImage(prompt, options);
   }
 
   /**
@@ -137,9 +149,10 @@ export class PackyClient {
    * @param {Claw} claw - 🦞 角色
    * @param {Object} oldStage - 旧阶段
    * @param {Object} newStage - 新阶段
+   * @param {Object} options - 生成选项
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateMilestonePhoto(claw, oldStage, newStage) {
+  async generateMilestonePhoto(claw, oldStage, newStage, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -147,10 +160,7 @@ export class PackyClient {
     
     console.log('🎉 生成成长纪念照...');
     
-    return this.generateImage(prompt, {
-      size: '1024x1024',
-      seed: -1
-    });
+    return this.generateImage(prompt, options);
   }
 
   /**
@@ -158,9 +168,10 @@ export class PackyClient {
    * @param {Claw} claw - 🦞 角色
    * @param {string} eventType - 事件类型
    * @param {Object} details - 事件详情
+   * @param {Object} options - 生成选项
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateSpecialEvent(claw, eventType, details) {
+  async generateSpecialEvent(claw, eventType, details, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -168,10 +179,7 @@ export class PackyClient {
     
     console.log('✨ 生成特殊事件图片...');
     
-    return this.generateImage(prompt, {
-      size: '1024x1024',
-      seed: -1
-    });
+    return this.generateImage(prompt, options);
   }
 }
 

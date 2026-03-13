@@ -60,9 +60,10 @@ export class GeminiClient {
    * @param {Claw} claw - 🦞 角色
    * @param {string} locationId - 地点 ID
    * @param {string} activity - 活动
+   * @param {Object} options - 生成选项（Gemini 会忽略不支持的选项）
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generatePostcard(claw, locationId, activity) {
+  async generatePostcard(claw, locationId, activity, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -70,16 +71,17 @@ export class GeminiClient {
     
     console.log('Generating postcard with prompt:', prompt);
     
-    return this.generateImage(prompt);
+    return this.generateImage(prompt, options);
   }
 
   /**
    * 生成自拍
    * @param {Claw} claw - 🦞 角色
    * @param {Array} decorations - 家园装饰
+   * @param {Object} options - 生成选项（Gemini 会忽略不支持的选项）
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateSelfie(claw, decorations) {
+  async generateSelfie(claw, decorations, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -87,7 +89,7 @@ export class GeminiClient {
     
     console.log('Generating selfie with prompt:', prompt);
     
-    return this.generateImage(prompt);
+    return this.generateImage(prompt, options);
   }
 
   /**
@@ -95,9 +97,10 @@ export class GeminiClient {
    * @param {Claw} claw - 🦞 角色
    * @param {Object} oldStage - 旧阶段
    * @param {Object} newStage - 新阶段
+   * @param {Object} options - 生成选项（Gemini 会忽略不支持的选项）
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateMilestonePhoto(claw, oldStage, newStage) {
+  async generateMilestonePhoto(claw, oldStage, newStage, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -105,7 +108,7 @@ export class GeminiClient {
     
     console.log('Generating milestone photo with prompt:', prompt);
     
-    return this.generateImage(prompt);
+    return this.generateImage(prompt, options);
   }
 
   /**
@@ -113,9 +116,10 @@ export class GeminiClient {
    * @param {Claw} claw - 🦞 角色
    * @param {string} eventType - 事件类型
    * @param {Object} details - 事件详情
+   * @param {Object} options - 生成选项（Gemini 会忽略不支持的选项）
    * @returns {Promise<{imageData: string, mimeType: string}>}
    */
-  async generateSpecialEvent(claw, eventType, details) {
+  async generateSpecialEvent(claw, eventType, details, options = {}) {
     const { default: PromptBuilder } = await import('./PromptBuilder.js');
     const builder = new PromptBuilder(claw);
     
@@ -123,7 +127,7 @@ export class GeminiClient {
     
     console.log('Generating special event with prompt:', prompt);
     
-    return this.generateImage(prompt);
+    return this.generateImage(prompt, options);
   }
 }
 

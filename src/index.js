@@ -403,7 +403,7 @@ class TravelClawSkill {
   /**
    * 生成自拍
    */
-  async generateSelfie(engine) {
+  async generateSelfie(engine, options = {}) {
     if (!this.imageClient) {
       return { 
         text: '抱歉，生图功能需要配置 IMAGE_API_KEY 才能使用 🦞\n支持: PackyAPI、Gemini、OpenAI、Stability AI 等' 
@@ -419,19 +419,30 @@ class TravelClawSkill {
       const home = await engine.getHome();
       const imageResult = await this.imageClient.generateSelfie(
         engine.claw,
-        home.decorations
+        home.decorations,
+        options
       );
 
-      return {
-        text: '🦞 拍了一张自拍！',
-        image: {
-          data: imageResult.imageData,
-          mimeType: imageResult.mimeType
-        }
+      const response = {
+        text: '🦞 拍了一张自拍！'
       };
+
+      // 优先返回 base64 数据
+      if (imageResult.imageData) {
+        response.image = {
+          data: imageResult.imageData,
+          mimeType: imageResult.mimeType || 'image/png'
+        };
+      }
+      // 如果没有 base64 但有 URL，返回 URL
+      else if (imageResult.url) {
+        response.imageUrl = imageResult.url;
+      }
+
+      return response;
     } catch (error) {
       console.error('Error generating selfie:', error);
-      return { text: '生成图片时出错了，请稍后再试 🦞' };
+      return { text: `生成图片时出错了: ${error.message} 🦞` };
     }
   }
 
